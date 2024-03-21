@@ -2,38 +2,65 @@ package main
 
 import (
 	"fmt"
-	"net"
+	"log"
+	"syscall"
 )
 
-func echoListen(address, network string) {
-	// Only accepts 64 byte ICMP, I don't understand why the total size ends up being 84 tho,
-	// On an airplane right now so I'll check all this later
-	// This listener will print both the echo request (code 8) and the echo response (code 0)
-	payload := make([]byte, 84)
-	request := 1
-	response := 1
-	listen, err := net.ListenPacket(network, address)
-	if err != nil {
-		fmt.Print("Error!!!")
-	}
-	for {
-		listen.ReadFrom(payload)
+func main() {
 
-		switch payload[0] {
-		case 8:
-			fmt.Print("System Is Making Echo Request ", request)
-			request++
-		case 0:
-			fmt.Print("System Is Sending Echo Response ", response)
-			response++
-		default:
-			fmt.Print("ICMP Packet of unsupported code recieved. Only codes 0 and 8 are currently supported")
+	type rawPacket struct {
+		HEADER_IP    HEADER_IP    // 20 Bytes
+		HEADER_ICMP  HEADER_ICMP  // 8 Bytes
+		ICMP_PAYLOAD ICMP_PAYLOAD // Remaining Bytes
+	}
+
+	type HEADER_IP struct {
+		VERSION       int // First 4 bits
+		HEADER_LENGTH int // Second 4 bits
+		SERVICE_TYPE
+		TOTAL_LENGTH
+		IDENTIFICATION
+		FLAGS
+		FRAGMENTATION_OFFSET
+		TTL
+		PROTOCOL
+		CHECKSUM
+	}
+
+	type HEADER_ICMP struct {
+		TYPE
+		CODE
+		CHECKSUM
+		FIELD
+	}
+
+	type ICMP_PAYLOAD struct {
+	}
+
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	for {
+
+		maxAllowedSize := 1500
+		buffer := make([]byte, 0, maxAllowedSize)
+		bytesRecieved, err := syscall.Read(fd, buffer[len(buffer):cap(buffer)])
+		buffer = buffer[:len(buffer)+bytesRecieved]
+		if err != nil {
+			log.Print(err)
+			return
 		}
 
-		fmt.Print("\nPayload: ", payload, "\n\n")
-	}
-}
+		// Handle response when packet was too large
+		if bytesRecieved >= maxAllowedSize {
+			log.Print("Packet Trimmed!!!")
+		}
 
-func main() {
-	echoListen("127.0.0.1", "ip4:icmp")
+		fmt.Print("\n Bytes Recieved: ", bytesRecieved, "\n", buffer)
+		//fmt.Printf("\n%02X ", buffer)
+	}
+
 }
